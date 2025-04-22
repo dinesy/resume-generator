@@ -9,6 +9,7 @@ from pprint import pprint
 convert curly quotes to straight quotes and em and en dashes to hyphens
 """
 def clean_quotes_and_dashes(text):
+    if not text: return text
     text = re.sub(r'“|”', '"', text)
     text = re.sub(r'‘|’', "'", text)
     text = re.sub(r'—', '-', text)
@@ -19,6 +20,7 @@ def clean_quotes_and_dashes(text):
 convert curly quotes and em and en dashes to proper HTML code
 """
 def convert_quotes_and_dashes(text):
+    if not text: return text
     text = text.replace("“", "&#147;")
     text = text.replace("”", "&#148;")
     text = text.replace("‘", "&#145;")
