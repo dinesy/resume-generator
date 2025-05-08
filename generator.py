@@ -102,32 +102,63 @@ def is_collection(item):
 def is_dict(item):
     return is_instance(item, dict)
 
-class JinjaServer(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        # pprint(self.requestline)
-        # pprint(self.path)
-        env = Environment(loader=FileSystemLoader("."))
-        env.tests["list"] = is_list
-        env.tests["dict"] = is_dict
-        env.tests["tuple"] = is_tuple
-        env.tests["str"] = is_str
-        env.tests["collection"] = is_collection
-        env.filters["prep_details"] = prep_details
-        env.filters["clean_style"] = clean_quotes_and_dashes
-        env.filters["convert_style"] = convert_quotes_and_dashes
-        with open("resume.yaml") as fh:
-            doc = yaml.safe_load(fh)
 
-        if self.path == "/css":
-            ext = "css"
-        else:
-            ext = "html"
-        template = env.get_template(f"resume.{ext}.jinja2")
-        self.send_response(200)
-        self.send_header('Content-type', f'text/{ext}')
-        self.end_headers()
-        self.wfile.write(template.render(doc).encode('utf-8'))
+class HandlerFactory:
+    def __init__(self, yaml_path, jinja_env):
+        self.yaml_path = yaml_path
+        self.jinja_env = jinja_env
+
+    def get_handler(self):
+        factory = self
+
+        class JinjaServer(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.startswith("/font/"):
+                    urlpath = Path(self.path)
+                    # fontname = self.path.split("/")[-1]
+                    font = Path(factory.jinja_env.loader.searchpath[0]) / urlpath.name
+                    # fontpath = f"{factory.jinja_env.loader.searchpath}/{fontname}"
+                    if font.is_file():
+                        with font.open("rb") as fh:
+                            self.send_response(200)
+                            self.send_header(
+                                "Content-type", f"application/font-{font.suffix[1:]}"
+                            )  # f"font/{font.suffix[1:]}")
+                            self.end_headers()
+                            self.wfile.write(fh.read())
+                if self.path.startswith("/css"):
+                    ext = "css"
+                else:
+                    ext = "html"
+                template = factory.jinja_env.get_template(f"resume.{ext}.jinja2")
+
+                with open(factory.yaml_path) as fh:
+                    doc = yaml.safe_load(fh)
+
+                self.send_response(200)
+                self.send_header("Content-type", f"text/{ext}")
+                self.end_headers()
+                self.wfile.write(
+                    template.render(doc, random=str(random.random())[2:]).encode(
+                        "utf-8"
+                    )
+                )
+
+        return JinjaServer
+
 
 if __name__ == "__main__":
-    httpd = http.server.HTTPServer(('', 8080), JinjaServer)
+    env = Environment(loader=FileSystemLoader(sys.argv[2]))
+    env.tests["list"] = is_list
+    env.tests["dict"] = is_dict
+    env.tests["tuple"] = is_tuple
+    env.tests["str"] = is_str
+    env.tests["collection"] = is_collection
+    env.filters["prep_details"] = prep_details
+    env.filters["clean_style"] = clean_quotes_and_dashes
+    env.filters["convert_style"] = convert_quotes_and_dashes
+
+    httpd = http.server.HTTPServer(
+        ("", 8080), HandlerFactory(sys.argv[1], env).get_handler()
+    )
     httpd.serve_forever()
