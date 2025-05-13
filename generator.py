@@ -5,6 +5,7 @@ import http.server
 import re
 from pathlib import Path
 import random
+from urllib.parse import urlsplit
 from pprint import pprint
 
 """
@@ -113,36 +114,49 @@ class HandlerFactory:
 
         class JinjaServer(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path.startswith("/font/"):
-                    urlpath = Path(self.path)
-                    # fontname = self.path.split("/")[-1]
-                    font = Path(factory.jinja_env.loader.searchpath[0]) / urlpath.name
-                    # fontpath = f"{factory.jinja_env.loader.searchpath}/{fontname}"
-                    if font.is_file():
-                        with font.open("rb") as fh:
+                urlparts = urlsplit(self.path)
+                if urlparts.path == "/":
+                    urlpath = Path("/resume.html")
+                else:
+                    urlpath = Path(urlparts.path)
+
+                if len(urlpath.parts) >= 2:
+                    if urlpath.parts[1] == "font":
+                        font = (
+                            Path(factory.jinja_env.loader.searchpath[0]) / urlpath.name
+                        )
+                        if font.is_file():
+                            with font.open("rb") as fh:
+                                self.send_response(200)
+                                self.send_header(
+                                    "Content-type",
+                                    f"application/font-{font.suffix[1:]}",
+                                )
+                                self.end_headers()
+                                self.wfile.write(fh.read())
+                                return
+                    else:
+                        reqfile = urlpath.name + ".jinja2"
+                        if (
+                            Path(factory.jinja_env.loader.searchpath[0]) / reqfile
+                        ).is_file():
+                            template = factory.jinja_env.get_template(reqfile)
+                            with open(factory.yaml_path) as fh:
+                                doc = yaml.safe_load(fh)
                             self.send_response(200)
                             self.send_header(
-                                "Content-type", f"application/font-{font.suffix[1:]}"
-                            )  # f"font/{font.suffix[1:]}")
+                                "Content-type", f"text/{urlpath.suffix[1:]}"
+                            )
                             self.end_headers()
-                            self.wfile.write(fh.read())
-                if self.path.startswith("/css"):
-                    ext = "css"
-                else:
-                    ext = "html"
-                template = factory.jinja_env.get_template(f"resume.{ext}.jinja2")
-
-                with open(factory.yaml_path) as fh:
-                    doc = yaml.safe_load(fh)
-
-                self.send_response(200)
-                self.send_header("Content-type", f"text/{ext}")
-                self.end_headers()
-                self.wfile.write(
-                    template.render(doc, random=str(random.random())[2:]).encode(
-                        "utf-8"
-                    )
-                )
+                            vars = {
+                                "docname": urlpath.stem,
+                                "random": str(random.random())[2:],
+                            }
+                            self.wfile.write(
+                                template.render(doc, **vars).encode("utf-8")
+                            )
+                            return
+                self.send_error(404, f"File not found: {urlpath}")
 
         return JinjaServer
 
