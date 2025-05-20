@@ -5,7 +5,7 @@ import http.server
 import re
 from pathlib import Path
 import random
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from pprint import pprint
 
 """
@@ -120,6 +120,24 @@ class HandlerFactory:
                 else:
                     urlpath = Path(urlparts.path)
 
+                def str2num(val):
+                    if val.isdigit():
+                        return int(val)
+                    if val.isdecimal():
+                        return float(val)
+                    return val
+
+                def cvt_param(lst):
+                    return (
+                        str2num(lst[0])
+                        if isinstance(lst, (list, tuple)) and len(lst) == 1
+                        else list(map(str2num, lst))
+                    )
+
+                urlquery = {
+                    k: cvt_param(v) for k, v in parse_qs(urlparts.query).items()
+                }
+
                 if len(urlpath.parts) >= 2:
                     if urlpath.parts[1] == "font":
                         font = (
@@ -151,6 +169,8 @@ class HandlerFactory:
                             vars = {
                                 "docname": urlpath.stem,
                                 "random": str(random.random())[2:],
+                                "url_query": urlquery,
+                                "url_query_str": urlparts.query,
                             }
                             self.wfile.write(
                                 template.render(doc, **vars).encode("utf-8")
