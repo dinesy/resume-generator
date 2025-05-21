@@ -1,6 +1,8 @@
 import sys
+import types
 import yaml
 from jinja2 import Environment, FileSystemLoader
+from jinja2.exceptions import TemplateNotFound
 import http.server
 import re
 from pathlib import Path
@@ -104,15 +106,55 @@ def is_dict(item):
     return is_instance(item, dict)
 
 
-class HandlerFactory:
-    def __init__(self, yaml_path, jinja_env):
-        self.yaml_path = yaml_path
-        self.jinja_env = jinja_env
+def yaml_load(path):
+    with open(path) as fh:
+        return yaml.safe_load(fh.read())
 
-    def get_handler(self):
-        factory = self
 
-        class JinjaServer(http.server.BaseHTTPRequestHandler):
+class Generator:
+    def __init__(self, yaml_path, jinja_path, server_address=("localhost", 8080)):
+        self._yaml_path = yaml_path
+        self._jinja_env = lambda: Environment(loader=FileSystemLoader(jinja_path))
+        self._httpd = lambda: http.server.ThreadingHTTPServer(
+            server_address, self.get_http_handler()
+        )
+
+    @property
+    def yaml_doc(self):
+        return yaml_load(self._yaml_path)
+
+    @property
+    def jinja_env(self):
+        if isinstance(self._jinja_env, types.FunctionType):
+            self._jinja_env = self._jinja_env()
+            self._jinja_env.tests["list"] = is_list
+            self._jinja_env.tests["dict"] = is_dict
+            self._jinja_env.tests["tuple"] = is_tuple
+            self._jinja_env.tests["str"] = is_str
+            self._jinja_env.tests["collection"] = is_collection
+            self._jinja_env.filters["prep_details"] = prep_details
+            self._jinja_env.filters["clean_style"] = clean_quotes_and_dashes
+            self._jinja_env.filters["convert_style"] = convert_quotes_and_dashes
+        return self._jinja_env
+
+    @property
+    def httpd(self):
+        if isinstance(self._httpd, types.FunctionType):
+            self._httpd = self._httpd()
+        return self._httpd
+
+    @property
+    def server_address(self):
+        if self._httpd is None:
+            return
+        return "http://" + ":".join(map(str, self.httpd.server_address)).replace(
+            "0.0.0.0", "localhost"
+        )
+
+    def get_http_handler(self):
+        parent = self
+
+        class JinjaHandler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 urlparts = urlsplit(self.path)
                 if urlparts.path == "/":
@@ -141,7 +183,7 @@ class HandlerFactory:
                 if len(urlpath.parts) >= 2:
                     if urlpath.parts[1] == "font":
                         font = (
-                            Path(factory.jinja_env.loader.searchpath[0]) / urlpath.name
+                            Path(parent.jinja_env.loader.searchpath[0]) / urlpath.name
                         )
                         if font.is_file():
                             with font.open("rb") as fh:
@@ -154,13 +196,13 @@ class HandlerFactory:
                                 self.wfile.write(fh.read())
                                 return
                     else:
-                        reqfile = urlpath.name + ".jinja2"
-                        if (
-                            Path(factory.jinja_env.loader.searchpath[0]) / reqfile
-                        ).is_file():
-                            template = factory.jinja_env.get_template(reqfile)
-                            with open(factory.yaml_path) as fh:
-                                doc = yaml.safe_load(fh)
+                        reqfile = urlpath.with_suffix(urlpath.suffix + ".jinja2")
+                        try:
+                            template = parent.jinja_env.get_template(str(reqfile))
+                        except TemplateNotFound:
+                            pass
+                        else:
+                            doc = parent.yaml_doc
                             self.send_response(200)
                             self.send_header(
                                 "Content-type", f"text/{urlpath.suffix[1:]}"
@@ -178,21 +220,8 @@ class HandlerFactory:
                             return
                 self.send_error(404, f"File not found: {urlpath}")
 
-        return JinjaServer
+        return JinjaHandler
 
 
 if __name__ == "__main__":
-    env = Environment(loader=FileSystemLoader(sys.argv[2]))
-    env.tests["list"] = is_list
-    env.tests["dict"] = is_dict
-    env.tests["tuple"] = is_tuple
-    env.tests["str"] = is_str
-    env.tests["collection"] = is_collection
-    env.filters["prep_details"] = prep_details
-    env.filters["clean_style"] = clean_quotes_and_dashes
-    env.filters["convert_style"] = convert_quotes_and_dashes
-
-    httpd = http.server.HTTPServer(
-        ("", 8080), HandlerFactory(sys.argv[1], env).get_handler()
-    )
-    httpd.serve_forever()
+    Generator(sys.argv[1], sys.argv[2], ("", 8080)).httpd.serve_forever()
