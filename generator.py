@@ -130,7 +130,7 @@ class Generator:
         self._yaml_path = yaml_path
         self._jinja_env = lambda: Environment(loader=FileSystemLoader(jinja_path))
         self._httpd = lambda: http.server.ThreadingHTTPServer(
-            server_address, self.get_http_handler()
+            server_address, self._create_http_handler()
         )
 
     @property
@@ -165,111 +165,117 @@ class Generator:
             "0.0.0.0", "localhost"
         )
 
-    def get_http_handler(self):
-        parent = self
+    def _create_http_handler(self):
+        generator = self
 
-        class JinjaHandler(http.server.BaseHTTPRequestHandler):
-            @classmethod
-            def str2num(cls, val):
-                if val.isdigit():
-                    return int(val)
-                if val.isdecimal():
-                    return float(val)
-                return val
-
-            @classmethod
-            def cvt_param(cls, lst):
-                if isinstance(lst, (list, tuple)) and len(lst) == 1:
-                    return cls.str2num(lst[0])
-                else:
-                    list(map(cls.str2num, lst))
-
+        class JinjaHandler(AbsJinjaHandler):
             @property
-            def urlparts(self):
-                return urlsplit(self.path)
-
-            @property
-            def urlpath(self):
-                if self.urlparts.path == "/":
-                    return Path("/resume.html")
-                else:
-                    return Path(self.urlparts.path)
-
-            @property
-            def urlquery(self):
-                return {
-                    k: self.cvt_param(v)
-                    for k, v in parse_qs(self.urlparts.query).items()
-                }
-
-            def do_GET(self):
-                if len(self.urlpath.parts) >= 2:
-                    if self.urlpath.parts[1] == "font":
-                        font = (
-                            Path(parent.jinja_env.loader.searchpath[0])
-                            / self.urlpath.name
-                        )
-                        if font.is_file():
-                            with font.open("rb") as fh:
-                                self.send_response(200)
-                                self.send_header(
-                                    "Content-type",
-                                    f"application/font-{font.suffix[1:]}",
-                                )
-                                self.end_headers()
-                                self.wfile._sock.sendfile(fh)
-                                return
-                    elif self.urlpath.suffix == ".pdf":
-                        html_path = self.urlpath.with_suffix(".html")
-                        html_url = parent.server_address + urlunsplit(
-                            self.urlparts._replace(path=str(html_path))
-                        )
-                        mimetype = "application/pdf"
-                        with tempfile.NamedTemporaryFile(
-                            "r+b", suffix=".pdf", prefix="resume_", delete=False
-                        ) as pdftmp:
-                            cmd = chrome_pdf_convert(html_url, pdftmp.name, esc=False)
-                            proc = subprocess.Popen(
-                                cmd,
-                                shell=False,
-                                start_new_session=True,
-                            )
-                            proc.wait()
-                            self.send_response(200)
-                            self.send_header("Content-type", mimetype)
-                            self.send_header(
-                                "Content-Disposition",
-                                f"filename={self.urlpath.name}",
-                            )
-                            self.end_headers()
-                            self.wfile._sock.sendfile(pdftmp)
-                        return
-                    else:
-                        reqfile = self.urlpath.with_suffix(
-                            self.urlpath.suffix + ".jinja2"
-                        )
-                        mimetype = f"text/{self.urlpath.suffix[1:]}"
-                        try:
-                            template = parent.jinja_env.get_template(str(reqfile))
-                        except TemplateNotFound:
-                            pass
-                        else:
-                            doc = parent.yaml_doc
-                            vars = {
-                                "docname": self.urlpath.stem,
-                                "random": str(random.random())[2:],
-                                "url_query": self.urlquery,
-                                "url_query_str": self.urlparts.query,
-                            }
-                            rendered_doc = template.render(doc, **vars)
-                            self.send_response(200)
-                            self.send_header("Content-type", mimetype)
-                            self.end_headers()
-                            self.wfile.write(rendered_doc.encode("utf-8"))
-                            return
-                self.send_error(404, f"File not found: {self.urlpath}")
+            def _generator(self):
+                return generator
 
         return JinjaHandler
+
+
+class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
+    @classmethod
+    def str2num(cls, val):
+        if val.isdigit():
+            return int(val)
+        if val.isdecimal():
+            return float(val)
+        return val
+
+    @classmethod
+    def cvt_param(cls, lst):
+        if isinstance(lst, (list, tuple)) and len(lst) == 1:
+            return cls.str2num(lst[0])
+        else:
+            list(map(cls.str2num, lst))
+
+    @property
+    def _generator(self):
+        raise NotImplementedError()
+
+    @property
+    def urlparts(self):
+        return urlsplit(self.path)
+
+    @property
+    def urlpath(self):
+        if self.urlparts.path == "/":
+            return Path("/resume.html")
+        else:
+            return Path(self.urlparts.path)
+
+    @property
+    def urlquery(self):
+        return {k: self.cvt_param(v) for k, v in parse_qs(self.urlparts.query).items()}
+
+    def do_GET(self):
+        if len(self.urlpath.parts) >= 2:
+            if self.urlpath.parts[1] == "font":
+                font = (
+                    Path(self._generator.jinja_env.loader.searchpath[0])
+                    / self.urlpath.name
+                )
+                if font.is_file():
+                    with font.open("rb") as fh:
+                        self.send_response(200)
+                        self.send_header(
+                            "Content-type",
+                            f"application/font-{font.suffix[1:]}",
+                        )
+                        self.end_headers()
+                        self.wfile._sock.sendfile(fh)
+                        return
+            elif self.urlpath.suffix == ".pdf":
+                html_path = self.urlpath.with_suffix(".html")
+                html_url = self._generator.server_address + urlunsplit(
+                    self.urlparts._replace(path=str(html_path))
+                )
+                mimetype = "application/pdf"
+                with tempfile.NamedTemporaryFile(
+                    "r+b", suffix=".pdf", prefix="resume_", delete=False
+                ) as pdftmp:
+                    cmd = chrome_pdf_convert(html_url, pdftmp.name, esc=False)
+                    proc = subprocess.Popen(
+                        cmd,
+                        shell=False,
+                        start_new_session=True,
+                    )
+                    proc.wait()
+                    subprocess.Popen(["ls", "-l", pdftmp.name])
+                    self.send_response(200)
+                    self.send_header("Content-type", mimetype)
+                    self.send_header(
+                        "Content-Disposition",
+                        f"filename={self.urlpath.name}",
+                    )
+                    self.end_headers()
+                    self.wfile._sock.sendfile(pdftmp)
+                return
+            else:
+                reqfile = self.urlpath.with_suffix(self.urlpath.suffix + ".jinja2")
+                mimetype = f"text/{self.urlpath.suffix[1:]}"
+                try:
+                    template = self._generator.jinja_env.get_template(str(reqfile))
+                except TemplateNotFound:
+                    pass
+                else:
+                    doc = self._generator.yaml_doc
+                    vars = {
+                        "docname": self.urlpath.stem,
+                        "random": str(random.random())[2:],
+                        "url_query": self.urlquery,
+                        "url_query_str": self.urlparts.query,
+                    }
+                    rendered_doc = template.render(doc, **vars)
+                    self.send_response(200)
+                    self.send_header("Content-type", mimetype)
+                    self.end_headers()
+                    self.wfile.write(rendered_doc.encode("utf-8"))
+                    return
+        self.send_error(404, f"File not found: {self.urlpath}")
 
 
 if __name__ == "__main__":
