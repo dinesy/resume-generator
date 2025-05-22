@@ -10,12 +10,12 @@ import random
 from urllib.parse import urlsplit, parse_qs
 from pprint import pprint
 
-"""
-convert curly quotes to straight quotes and em and en dashes to hyphens
-"""
 
 
 def clean_quotes_and_dashes(text):
+    """
+    convert curly quotes to straight quotes and em and en dashes to hyphens
+    """
     if not text:
         return text
     text = re.sub(r"“|”", '"', text)
@@ -25,12 +25,10 @@ def clean_quotes_and_dashes(text):
     return text
 
 
-"""
-convert curly quotes and em and en dashes to proper HTML code
-"""
-
-
 def convert_quotes_and_dashes(text):
+    """
+    convert curly quotes and em and en dashes to proper HTML code
+    """
     if not text:
         return text
     text = text.replace("“", "&#147;")
@@ -40,14 +38,12 @@ def convert_quotes_and_dashes(text):
     return text
 
 
-"""
-flatten lists of dictionaries to 1 list of k,v pairs
-bare lists are (None, <list>)
-scalars are (None, <scalar>)
-"""
-
-
 def prep_details(items):
+    """
+    flatten lists of dictionaries to 1 list of k,v pairs
+    bare lists are (None, <list>)
+    scalars are (None, <scalar>)
+    """
     # if is_str(items):
     #     return items
     result = []
