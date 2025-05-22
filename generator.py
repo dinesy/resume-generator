@@ -7,9 +7,27 @@ import http.server
 import re
 from pathlib import Path
 import random
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, urlunsplit, parse_qs
+import tempfile
+import shlex
+import subprocess
 from pprint import pprint
 
+CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def chrome_pdf_convert(input, pdf_path, esc=False):
+    cmd = [
+        CHROME_BIN,
+        "--headless",
+        "--disable-gpu",
+        "--no-pdf-header-footer",
+        f"--print-to-pdf={pdf_path}",
+        input,
+    ]
+    if esc:
+        cmd = list(map(shlex.quote, cmd))
+    return cmd
 
 
 def clean_quotes_and_dashes(text):
@@ -191,28 +209,52 @@ class Generator:
                                 self.end_headers()
                                 self.wfile.write(fh.read())
                                 return
+                    elif urlpath.suffix == ".pdf":
+                        html_path = urlpath.with_suffix(".html")
+                        html_url = parent.server_address + urlunsplit(
+                            urlparts._replace(path=str(html_path))
+                        )
+                        mimetype = "application/pdf"
+                        with tempfile.NamedTemporaryFile(
+                            "r+b", suffix=".pdf", prefix="resume_", delete=False
+                        ) as pdftmp:
+                            cmd = chrome_pdf_convert(html_url, pdftmp.name, esc=False)
+                            proc = subprocess.Popen(
+                                cmd,
+                                shell=False,
+                                start_new_session=True,
+                            )
+                            proc.wait()
+                            self.send_response(200)
+                            self.send_header("Content-type", mimetype)
+                            self.send_header(
+                                "Content-Disposition",
+                                f"filename={urlpath.name}",
+                            )
+                            self.end_headers()
+                            data = pdftmp.read()
+                            self.wfile.write(data)
+                        return
                     else:
                         reqfile = urlpath.with_suffix(urlpath.suffix + ".jinja2")
+                        mimetype = f"text/{urlpath.suffix[1:]}"
                         try:
                             template = parent.jinja_env.get_template(str(reqfile))
                         except TemplateNotFound:
                             pass
                         else:
                             doc = parent.yaml_doc
-                            self.send_response(200)
-                            self.send_header(
-                                "Content-type", f"text/{urlpath.suffix[1:]}"
-                            )
-                            self.end_headers()
                             vars = {
                                 "docname": urlpath.stem,
                                 "random": str(random.random())[2:],
                                 "url_query": urlquery,
                                 "url_query_str": urlparts.query,
                             }
-                            self.wfile.write(
-                                template.render(doc, **vars).encode("utf-8")
-                            )
+                            rendered_doc = template.render(doc, **vars)
+                            self.send_response(200)
+                            self.send_header("Content-type", mimetype)
+                            self.end_headers()
+                            self.wfile.write(rendered_doc.encode("utf-8"))
                             return
                 self.send_error(404, f"File not found: {urlpath}")
 
