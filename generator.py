@@ -169,35 +169,45 @@ class Generator:
         parent = self
 
         class JinjaHandler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                urlparts = urlsplit(self.path)
-                if urlparts.path == "/":
-                    urlpath = Path("/resume.html")
+            @classmethod
+            def str2num(cls, val):
+                if val.isdigit():
+                    return int(val)
+                if val.isdecimal():
+                    return float(val)
+                return val
+
+            @classmethod
+            def cvt_param(cls, lst):
+                if isinstance(lst, (list, tuple)) and len(lst) == 1:
+                    return cls.str2num(lst[0])
                 else:
-                    urlpath = Path(urlparts.path)
+                    list(map(cls.str2num, lst))
 
-                def str2num(val):
-                    if val.isdigit():
-                        return int(val)
-                    if val.isdecimal():
-                        return float(val)
-                    return val
+            @property
+            def urlparts(self):
+                return urlsplit(self.path)
 
-                def cvt_param(lst):
-                    return (
-                        str2num(lst[0])
-                        if isinstance(lst, (list, tuple)) and len(lst) == 1
-                        else list(map(str2num, lst))
-                    )
+            @property
+            def urlpath(self):
+                if self.urlparts.path == "/":
+                    return Path("/resume.html")
+                else:
+                    return Path(self.urlparts.path)
 
-                urlquery = {
-                    k: cvt_param(v) for k, v in parse_qs(urlparts.query).items()
+            @property
+            def urlquery(self):
+                return {
+                    k: self.cvt_param(v)
+                    for k, v in parse_qs(self.urlparts.query).items()
                 }
 
-                if len(urlpath.parts) >= 2:
-                    if urlpath.parts[1] == "font":
+            def do_GET(self):
+                if len(self.urlpath.parts) >= 2:
+                    if self.urlpath.parts[1] == "font":
                         font = (
-                            Path(parent.jinja_env.loader.searchpath[0]) / urlpath.name
+                            Path(parent.jinja_env.loader.searchpath[0])
+                            / self.urlpath.name
                         )
                         if font.is_file():
                             with font.open("rb") as fh:
@@ -207,12 +217,12 @@ class Generator:
                                     f"application/font-{font.suffix[1:]}",
                                 )
                                 self.end_headers()
-                                self.wfile.write(fh.read())
+                                self.wfile._sock.sendfile(fh)
                                 return
-                    elif urlpath.suffix == ".pdf":
-                        html_path = urlpath.with_suffix(".html")
+                    elif self.urlpath.suffix == ".pdf":
+                        html_path = self.urlpath.with_suffix(".html")
                         html_url = parent.server_address + urlunsplit(
-                            urlparts._replace(path=str(html_path))
+                            self.urlparts._replace(path=str(html_path))
                         )
                         mimetype = "application/pdf"
                         with tempfile.NamedTemporaryFile(
@@ -229,15 +239,16 @@ class Generator:
                             self.send_header("Content-type", mimetype)
                             self.send_header(
                                 "Content-Disposition",
-                                f"filename={urlpath.name}",
+                                f"filename={self.urlpath.name}",
                             )
                             self.end_headers()
-                            data = pdftmp.read()
-                            self.wfile.write(data)
+                            self.wfile._sock.sendfile(pdftmp)
                         return
                     else:
-                        reqfile = urlpath.with_suffix(urlpath.suffix + ".jinja2")
-                        mimetype = f"text/{urlpath.suffix[1:]}"
+                        reqfile = self.urlpath.with_suffix(
+                            self.urlpath.suffix + ".jinja2"
+                        )
+                        mimetype = f"text/{self.urlpath.suffix[1:]}"
                         try:
                             template = parent.jinja_env.get_template(str(reqfile))
                         except TemplateNotFound:
@@ -245,10 +256,10 @@ class Generator:
                         else:
                             doc = parent.yaml_doc
                             vars = {
-                                "docname": urlpath.stem,
+                                "docname": self.urlpath.stem,
                                 "random": str(random.random())[2:],
-                                "url_query": urlquery,
-                                "url_query_str": urlparts.query,
+                                "url_query": self.urlquery,
+                                "url_query_str": self.urlparts.query,
                             }
                             rendered_doc = template.render(doc, **vars)
                             self.send_response(200)
@@ -256,7 +267,7 @@ class Generator:
                             self.end_headers()
                             self.wfile.write(rendered_doc.encode("utf-8"))
                             return
-                self.send_error(404, f"File not found: {urlpath}")
+                self.send_error(404, f"File not found: {self.urlpath}")
 
         return JinjaHandler
 
