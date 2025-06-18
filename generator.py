@@ -16,6 +16,12 @@ from pprint import pprint
 CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 
+class Defaults:
+    indent_incr = 2
+    bullet_char = "*"
+    prevent_breaks = True
+
+
 def chrome_pdf_convert(input, pdf_path, esc=False):
     cmd = [
         CHROME_BIN,
@@ -266,7 +272,15 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                     vars = {
                         "docname": self.urlpath.stem,
                         "random": str(random.random())[2:],
-                        "url_query": self.urlquery,
+                        "indent_incr": self.urlquery.get(
+                            "indent_incr", Defaults.indent_incr
+                        ),
+                        "bullet_char": self.urlquery.get(
+                            "bullet_char", Defaults.bullet_char
+                        ),
+                        "prevent_breaks": bool(
+                            self.urlquery.get("prevent_breaks", Defaults.prevent_breaks)
+                        ),
                         "url_query_str": self.urlparts.query,
                     }
                     rendered_doc = template.render(doc, **vars)
