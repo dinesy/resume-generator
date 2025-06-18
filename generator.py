@@ -38,7 +38,7 @@ def clean_quotes_and_dashes(text):
         return text
     text = re.sub(r"“|”", '"', text)
     text = re.sub(r"‘|’", "'", text)
-    text = re.sub(r"—", "-", text)
+    text = re.sub(r"—", "--", text)
     text = re.sub(r"–", "-", text)
     return text
 
