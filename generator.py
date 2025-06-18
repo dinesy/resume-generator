@@ -256,7 +256,7 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                 return
             else:
                 reqfile = self.urlpath.with_suffix(self.urlpath.suffix + ".jinja2")
-                mimetype = f"text/{self.urlpath.suffix[1:]}"
+                mimetype = f"text/{self.urlpath.suffix[1:]}; charset=utf-8"
                 try:
                     template = self._generator.jinja_env.get_template(str(reqfile))
                 except TemplateNotFound:
