@@ -45,6 +45,7 @@ def clean_quotes_and_dashes(text):
     text = re.sub(r"“|”", '"', text)
     text = re.sub(r"‘|’", "'", text)
     text = re.sub(r"—", "--", text)
+    # text = text.replace("—", "--")
     text = re.sub(r"–", "-", text)
     return text
 
@@ -55,10 +56,13 @@ def convert_quotes_and_dashes(text):
     """
     if not text:
         return text
-    text = text.replace("“", "&#147;")
-    text = text.replace("”", "&#148;")
-    text = text.replace("‘", "&#145;")
-    text = text.replace("’", "&#146;")
+    text = text.replace("“", "&ldquo;")
+    text = text.replace("”", "&rdquo;")
+    text = text.replace("‘", "&lsquo;")
+    text = text.replace("’", "&rsquo;")
+    text = text.replace("–", "&ndash;")
+    text = text.replace("—", "&mdash;")
+    text = text.replace("…", "&hellip;")
     return text
 
 
