@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 import random
 from urllib.parse import urlsplit, urlunsplit, parse_qs
+from mimetypes import guess_file_type
 import tempfile
 import shlex
 import subprocess
@@ -223,6 +224,7 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if len(self.urlpath.parts) >= 2:
+            mimetype, encoding = guess_file_type(self.urlpath)
             if self.urlpath.parts[1] == "font":
                 font = (
                     Path(self._generator.jinja_env.loader.searchpath[0])
@@ -231,10 +233,7 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                 if font.is_file():
                     with font.open("rb") as fh:
                         self.send_response(200)
-                        self.send_header(
-                            "Content-type",
-                            f"application/font-{font.suffix[1:]}",
-                        )
+                        self.send_header("Content-type", mimetype)
                         self.end_headers()
                         self.wfile._sock.sendfile(fh)
                         return
@@ -243,7 +242,6 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                 html_url = self._generator.server_address + urlunsplit(
                     self.urlparts._replace(path=str(html_path))
                 )
-                mimetype = "application/pdf"
                 with tempfile.NamedTemporaryFile(
                     "r+b", suffix=".pdf", prefix="resume_", delete=False
                 ) as pdftmp:
@@ -266,7 +264,6 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                 return
             else:
                 reqfile = self.urlpath.with_suffix(self.urlpath.suffix + ".jinja2")
-                mimetype = f"text/{self.urlpath.suffix[1:]}; charset=utf-8"
                 try:
                     template = self._generator.jinja_env.get_template(str(reqfile))
                 except TemplateNotFound:
@@ -289,7 +286,7 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                     }
                     rendered_doc = template.render(doc, **vars)
                     self.send_response(200)
-                    self.send_header("Content-type", mimetype)
+                    self.send_header("Content-type", f"{mimetype}; charset=utf-8")
                     self.end_headers()
                     self.wfile.write(rendered_doc.encode("utf-8"))
                     return
