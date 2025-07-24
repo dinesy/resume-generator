@@ -1,0 +1,12 @@
+[project]
+name = "resume-generator"
+version = "0.1.0"
+description = "A Dynamic Template-Based Resume Generator"
+readme = "README.md"
+requires-python = ">=3.13.3"
+dependencies = [
+    "jinja2>=3.1.6",
+    "pydantic>=2.11.7",
+    "pydantic-settings>=2.10.1",
+    "pyyaml>=6.0.2",
+]
