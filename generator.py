@@ -1,31 +1,56 @@
-import sys
+import http.server
+import random
+import re
+import shlex
+import subprocess
+import tempfile
 import types
+from mimetypes import guess_file_type
+from pathlib import Path
+from typing import ClassVar, Self
+from urllib.parse import parse_qs, urlsplit, urlunsplit
+
 import yaml
 from jinja2 import Environment, FileSystemLoader
 from jinja2.exceptions import TemplateNotFound
-import http.server
-import re
-from pathlib import Path
-import random
-from urllib.parse import urlsplit, urlunsplit, parse_qs
-from mimetypes import guess_file_type
-import tempfile
-import shlex
-import subprocess
-from pprint import pprint
-
-CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+from pydantic import DirectoryPath, FilePath, IPvAnyAddress, PrivateAttr, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Defaults:
-    indent_incr = 2
-    bullet_char = "*"
-    prevent_breaks = True
+class Settings(BaseSettings):
+    _singleton: ClassVar[Self | None] = PrivateAttr(None)
+    _project_root: Path = Path(__file__).parent.parent.resolve()
+    indent_incr: int = 2
+    bullet_char: str = "*"
+    prevent_breaks: bool = True
+    chrome_bin: FilePath = (
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    )
+    resume_doc: FilePath
+    template_path: DirectoryPath = _project_root / "resume_template"
+    server_host_ip: str = "localhost"
+    server_host_port: int = 8080
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        cli_parse_args=True,
+    )
+
+    @computed_field
+    @property
+    def server_address(self) -> tuple[str, int]:
+        return (self.server_host_ip, self.server_host_port)
+
+    @classmethod
+    def settings(cls, *args, **kwargs):
+        if cls._singleton is None:
+            cls._singleton = Settings(*args, **kwargs)
+        return cls._singleton
 
 
 def chrome_pdf_convert(input, pdf_path, esc=False):
     cmd = [
-        CHROME_BIN,
+        Settings.settings().chrome_bin,
         "--headless",
         "--disable-gpu",
         "--no-pdf-header-footer",
@@ -269,18 +294,19 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                 except TemplateNotFound:
                     pass
                 else:
+                    settings = Settings.settings()
                     doc = self._generator.yaml_doc
                     vars = {
                         "docname": self.urlpath.stem,
                         "random": str(random.random())[2:],
                         "indent_incr": self.urlquery.get(
-                            "indent_incr", Defaults.indent_incr
+                            "indent_incr", settings.indent_incr
                         ),
                         "bullet_char": self.urlquery.get(
-                            "bullet_char", Defaults.bullet_char
+                            "bullet_char", settings.bullet_char
                         ),
                         "prevent_breaks": bool(
-                            self.urlquery.get("prevent_breaks", Defaults.prevent_breaks)
+                            self.urlquery.get("prevent_breaks", settings.prevent_breaks)
                         ),
                         "url_query_str": self.urlparts.query,
                     }
@@ -294,4 +320,7 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    Generator(sys.argv[1], sys.argv[2], ("", 8080)).httpd.serve_forever()
+    settings = Settings.settings()
+    Generator(
+        settings.resume_doc, settings.template_path, settings.server_address
+    ).httpd.serve_forever()
