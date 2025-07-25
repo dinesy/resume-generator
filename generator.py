@@ -13,8 +13,9 @@ from urllib.parse import parse_qs, urlsplit, urlunsplit
 import yaml
 from jinja2 import Environment, FileSystemLoader
 from jinja2.exceptions import TemplateNotFound
-from pydantic import DirectoryPath, FilePath, IPvAnyAddress, PrivateAttr, computed_field
+from pydantic import DirectoryPath, FilePath, PrivateAttr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from resume import RBBase, Resume
 
 
 class Settings(BaseSettings):
@@ -46,6 +47,10 @@ class Settings(BaseSettings):
         if cls._singleton is None:
             cls._singleton = Settings(*args, **kwargs)
         return cls._singleton
+
+
+class ResumeDoc(RBBase):
+    resume: Resume
 
 
 def chrome_pdf_convert(input, pdf_path, esc=False):
@@ -162,8 +167,8 @@ def yaml_load(path):
 
 
 class Generator:
-    def __init__(self, yaml_path, jinja_path, server_address=("localhost", 8080)):
-        self._yaml_path = yaml_path
+    def __init__(self, yaml_file, jinja_path, server_address=("localhost", 8080)):
+        self._yaml_file = yaml_file
         self._jinja_env = lambda: Environment(loader=FileSystemLoader(jinja_path))
         self._httpd = lambda: http.server.ThreadingHTTPServer(
             server_address, self._create_http_handler()
@@ -171,7 +176,11 @@ class Generator:
 
     @property
     def yaml_doc(self):
-        return yaml_load(self._yaml_path)
+        return yaml_load(self._yaml_file)
+
+    @property
+    def resume_doc(self):
+        return ResumeDoc.model_validate(self.yaml_doc)
 
     @property
     def jinja_env(self):
@@ -295,7 +304,7 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                     pass
                 else:
                     settings = Settings.settings()
-                    doc = self._generator.yaml_doc
+                    doc = self._generator.resume_doc
                     vars = {
                         "docname": self.urlpath.stem,
                         "random": str(random.random())[2:],
