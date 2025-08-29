@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     indent_incr: int = 2
     bullet_char: str = "*"
     prevent_breaks: bool = True
+    asciify_punctuation: bool = False
     chrome_bin: FilePath = (
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     )
@@ -78,6 +79,7 @@ def clean_quotes_and_dashes(text):
     text = re.sub(r"—", "--", text)
     # text = text.replace("—", "--")
     text = re.sub(r"–", "-", text)
+    text = re.sub(r"…", "...", text)
     return text
 
 
@@ -317,9 +319,14 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
                         "prevent_breaks": bool(
                             self.urlquery.get("prevent_breaks", settings.prevent_breaks)
                         ),
+                        "asciify_punctuation": bool(
+                            self.urlquery.get("ascii_punc", settings.asciify_punctuation)
+                        ),
                         "url_query_str": self.urlparts.query,
                     }
                     rendered_doc = template.render(doc, **vars)
+                    if vars["asciify_punctuation"]:
+                        rendered_doc = clean_quotes_and_dashes(rendered_doc)
                     self.send_response(200)
                     self.send_header("Content-type", f"{mimetype}; charset=utf-8")
                     self.end_headers()
