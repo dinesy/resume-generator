@@ -261,10 +261,10 @@ class AbsJinjaHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if len(self.urlpath.parts) >= 2:
             mimetype, encoding = guess_file_type(self.urlpath)
-            if self.urlpath.parts[1] == "font":
-                font = (
-                    Path(self._generator.jinja_env.loader.searchpath[0])
-                    / self.urlpath.name
+            if mimetype.startswith("font"):
+                font = Path(
+                    self._generator.jinja_env.loader.searchpath[0],
+                    *self.urlpath.parts[1:]
                 )
                 if font.is_file():
                     with font.open("rb") as fh:
