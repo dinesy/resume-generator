@@ -122,8 +122,9 @@ class JobPosition(RBBase):
     end_date: MonthYear | None = Field(
         default=None, description="End date of job (optional if currently holding)"
     )
-    details: NestedJobDetail = desc(
-        "Details, description, or explanation of the job, e.g. responsibilities, accomplishments, etc."
+    details: NestedJobDetail = Field(
+        description="Details, description, or explanation of the job, e.g. responsibilities, accomplishments, etc.",
+        default=None
     )
 
 
